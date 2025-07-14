@@ -1,0 +1,2 @@
+# blockchain_counterfeit_detector
+Detect counterfeit medicine using blockchain simulation
