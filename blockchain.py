@@ -1,5 +1,7 @@
 from datetime import date
 from block import Block, data
+GENESIS_DATA = data(batch_id=-1, name="Genesis", manufacturer="System", expiry_date=date.today())
+
 """  
 block0 = Block(0, "Manufactured: Paracetamol", "0", "Mumbai", "PharmaCorp")
 print("Block 0 hash:", block0.hash)
@@ -17,32 +19,23 @@ class BlockChain:
         self.last_block = self.head # hey when we create a block chain its actually only one block so last and same will be one #i seriously cant figure out how to do this
     
     def create_genesis_block(self):
-        genesis_block=Block(0 , self.data , None , "0" ,self.location,self.add_by)
+        genesis_block=Block(0 , GENESIS_DATA , None , "0" ,self.location,self.add_by) #fixed the Genesis issue as the root node is mostly symbolic should not have real data 
         return genesis_block
     #(self, index, data,previous_block, previous_hash,location,add_by ,timestamp=None
-    def add_block(self,location,add_by):
+    def add_block(self,data,location,add_by): #here added the data as before it was taking same data shared resource which was kinda risky
+        self.validate_data(data)  # It will raise if anything’s wrong # change this as self.validate_date(data) is not returning anything
+
+
         index=self.last_block.index+1
-        data=self.data
         previous_block=self.last_block
-        previous_hash=self.last_block.hash
-        
-
+        previous_hash=self.last_block.hash        
         new_block=Block(index , data , previous_block , previous_hash , location ,add_by)
-
         self.last_block=new_block
+   
+   
     def validate_data(self, data_obj):
         if self.is_duplicate_batch(data_obj.batch_id):
-
             raise ValueError("Duplicate batch ID detected.")
-        # Check for duplicate batch_id
-        def is_duplicate_batch(self, batch_id):
-            current = self.last_block
-            while current is not None:
-                if current.data.batch_id == batch_id:
-                    return True
-                current = current.previous_block
-            return False
-        
         
         # Check expiry is in future
         if data_obj.expiry_date <= date.today():
@@ -51,7 +44,14 @@ class BlockChain:
         # Check required fields
         if not all([data_obj.name, data_obj.manufacturer, data_obj.batch_id]):
             raise ValueError("Missing important medicine info.")
-    
+    # Check for duplicate batch_id
+    def is_duplicate_batch(self, batch_id): #move this is_duplicate_batch outside so that it can be reusable 
+        current = self.last_block
+        while current is not None:
+            if current.data.batch_id == batch_id:
+                return True
+            current = current.previous_block
+        return False
     def validate(self):
         current_block=self.last_block
 

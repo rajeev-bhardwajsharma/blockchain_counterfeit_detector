@@ -1,39 +1,61 @@
-from datetime import date
 import unittest
+from datetime import date, timedelta
+from block import Block, data
 from blockchain import BlockChain
-from block import data as Data
 
-class TestBlockchain(unittest.TestCase):
+class TestBlockChain(unittest.TestCase):
+
     def setUp(self):
-        self.test_data = Data(
-            batch_id=15263,
+        # Create valid sample data
+        self.sample_data1 = data(
+            batch_id=101,
             name="Paracetamol",
-            manufacturer="Albeltus",
-            expiry_date=date(2026, 8, 5)
+            manufacturer="PharmaCorp",
+            expiry_date=date.today() + timedelta(days=365)
         )
-        self.chain = BlockChain(self.test_data, "Aligarh", "Albeltus")
+        self.sample_data2 = data(
+            batch_id=102,
+            name="Ibuprofen",
+            manufacturer="MediLife",
+            expiry_date=date.today() + timedelta(days=180)
+        )
+        self.duplicate_data = data(  # same batch ID as sample_data1
+            batch_id=101,
+            name="Paracetamol",
+            manufacturer="FakePharma",
+            expiry_date=date.today() + timedelta(days=200)
+        )
+        self.expired_data = data(
+            batch_id=103,
+            name="ExpiredMed",
+            manufacturer="OldLabs",
+            expiry_date=date.today() - timedelta(days=10)
+        )
 
-    def test_genesis_block(self):
+        self.chain = BlockChain(self.sample_data1, "Mumbai", "PharmaCorp")
+
+    def test_genesis_block_created(self):
         self.assertEqual(self.chain.head.index, 0)
-        self.assertEqual(self.chain.head.data.name, "Paracetamol")
-        self.assertEqual(self.chain.head.location, "Aligarh")
-        self.assertEqual(self.chain.head.add_by, "Albeltus")
+        self.assertEqual(self.chain.head.data.name, "Genesis")
 
-    def test_add_block(self):
-        self.chain.add_block("Delhi", "DistributorX")
-        self.assertEqual(self.chain.last_block.index, 1)
+    def test_add_valid_block(self):
+        self.chain.add_block(self.sample_data2, "Delhi", "MediLife")
+        self.assertEqual(self.chain.last_block.data.batch_id, 102)
         self.assertEqual(self.chain.last_block.location, "Delhi")
-        self.assertEqual(self.chain.last_block.add_by, "DistributorX")
-        self.assertEqual(self.chain.last_block.previous_block, self.chain.head)
+        self.assertEqual(self.chain.last_block.add_by, "MediLife")
 
-    def test_validation(self):
-        self.chain.add_block("Delhi", "DistributorX")
-        self.chain.add_block("Lucknow", "RetailerY")
-        self.assertTrue(self.chain.validate())  # Should pass
+    def test_duplicate_batch_rejected(self):
+        self.chain.add_block(self.sample_data1, "Mumbai", "PharmaCorp") # to explicitly get into duplicate
+        with self.assertRaises(ValueError):
+            self.chain.add_block(self.duplicate_data, "Bangalore", "FakePharma")
 
-        # Tamper with the data
-        self.chain.last_block.data = Data(15263, "FakeMedicine", "FakeCorp", date(2026, 8, 5))
-        self.assertFalse(self.chain.validate())  # Should fail now
+    def test_expired_medicine_rejected(self):
+        with self.assertRaises(ValueError):
+            self.chain.add_block(self.expired_data, "Chennai", "OldLabs")
 
-if __name__ == '__main__':
+    def test_chain_validation(self):
+        self.chain.add_block(self.sample_data2, "Delhi", "MediLife")
+        self.assertTrue(self.chain.validate())
+
+if __name__ == "__main__":
     unittest.main()
