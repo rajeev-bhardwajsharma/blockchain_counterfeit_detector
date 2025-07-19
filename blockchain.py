@@ -1,7 +1,9 @@
 from datetime import date
 from block import Block, data
-from key_gen import ALLOWED_KEYS
-import rsa
+from key_gen import ALLOWED_KEYS # type: ignore
+import rsa # type: ignore
+from RuleEngine import RuleEngine, RuleViolation # type: ignore
+
 GENESIS_DATA = data(batch_id=-1, name="Genesis", manufacturer="System", expiry_date=date.today())
 
 
@@ -11,6 +13,7 @@ class BlockChain:
         self.location = location
         self.add_by = add_by
         self.signature=signature
+        self.rule_engine = RuleEngine(self) #for smart contract 
         self.head = self.create_genesis_block() #i think i have done this thing write
         self.last_block = self.head # hey when we create a block chain its actually only one block so last and same will be one #i seriously cant figure out how to do this
     
@@ -37,9 +40,17 @@ class BlockChain:
             raise ValueError("Not authorised to add Invalid signature")
         
 
-       
-        self.validate_data(data)  # It will raise if anything’s wrong # change this as self.validate_date(data) is not returning anything
+        #self.rule_engine.enforce_all_rules(data, location, add_by, signature)
+        try:
+            self.rule_engine.enforce_all_rules(data, location, add_by, signature)
+        except RuleViolation as rv:
+            print(f"[✗] Rule violation: {rv}")
+            raise  # 👈 rethrow it for the test to catch
+        except ValueError as ve:
+            print(f"[✗] Validation error: {ve}")
+            raise
 
+        
 
         index=self.last_block.index+1
         previous_block=self.last_block
@@ -48,26 +59,7 @@ class BlockChain:
         self.last_block=new_block
         print("Block add successfully")
    
-   
-    def validate_data(self, data_obj):
-        if self.is_duplicate_batch(data_obj.batch_id):
-            raise ValueError("Duplicate batch ID detected.")
-        
-        # Check expiry is in future
-        if data_obj.expiry_date <= date.today():
-            raise ValueError("Medicine is expired!")
 
-        # Check required fields
-        if not all([data_obj.name, data_obj.manufacturer, data_obj.batch_id]):
-            raise ValueError("Missing important medicine info.")
-    # Check for duplicate batch_id
-    def is_duplicate_batch(self, batch_id): #move this is_duplicate_batch outside so that it can be reusable 
-        current = self.last_block
-        while current is not None:
-            if current.data.batch_id == batch_id:
-                return True
-            current = current.previous_block
-        return False
     def validate(self):
         current_block=self.last_block
 
@@ -89,7 +81,7 @@ class BlockChain:
         while current:
             blocks.insert(0, current)
             current = current.previous_block
-        return list(reversed(blocks))
+        return blocks
 
     def print_chain(self):
         current = self.last_block

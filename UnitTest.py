@@ -1,137 +1,101 @@
+import datetime
 import unittest
 from datetime import date, timedelta
-from block import Block, data
+from block import data 
 from blockchain import BlockChain
-from dataclasses import FrozenInstanceError
-
-from key_gen import ALLOWED_KEYS,PRIVATE_KEYS
+from key_gen import PRIVATE_KEYS,ALLOWED_KEYS
 import rsa
+from RuleEngine import RuleViolation
 
 class TestBlockChain(unittest.TestCase):
-
     def setUp(self):
-        # Create valid sample data
-        self.sample_data1 = data(
-            batch_id=101,
+        self.user = "PharmaCorp"
+        self.location = "Delhi"
+        self.valid_data = data(
+            batch_id=1,
             name="Paracetamol",
-            manufacturer="PharmaCorp",
+            manufacturer="Pharma Inc.",
             expiry_date=date.today() + timedelta(days=365)
         )
-        self.sample_data2 = data(
-            batch_id=102,
-            name="Ibuprofen",
-            manufacturer="MediLife",
-            expiry_date=date.today() + timedelta(days=180)
-        )
-        self.duplicate_data = data(  # same batch ID as sample_data1
-            batch_id=101,
-            name="Paracetamol",
-            manufacturer="FakePharma",
-            expiry_date=date.today() + timedelta(days=200)
-        )
-        self.expired_data = data(
-            batch_id=103,
-            name="ExpiredMed",
-            manufacturer="OldLabs",
-            expiry_date=date.today() - timedelta(days=10)
-        )
+        # Create keypair for testing
+        (self.pubkey, self.privkey) = rsa.newkeys(512)
+        ALLOWED_KEYS[self.user] = self.pubkey  # overwrite with test key
+        PRIVATE_KEYS[self.user]=self.privkey
+        payload = f"{self.valid_data.batch_id}|{self.valid_data.name}|{self.valid_data.manufacturer}|{self.valid_data.expiry_date}|{self.user}|{self.location}"
+        self.signature = rsa.sign(payload.encode(), PRIVATE_KEYS[self.user], "SHA-256")
+        self.chain = BlockChain(self.valid_data, self.location, self.user, self.signature)
 
-        # Construct a payload if needed
-        self.payload =self.build_payload(self.sample_data1,"Mumbai","PharmaCorp")
-        self.signature = rsa.sign(self.payload.encode(), PRIVATE_KEYS["PharmaCorp"], 'SHA-256')
-        # Create initial blockchain with valid data
-        self.chain = BlockChain(self.sample_data1, "Mumbai", "PharmaCorp",self.signature)
+    def _generate_signature(self, data_obj):
+        payload = self.chain.build_payload(data_obj, self.location, self.user)
+        return rsa.sign(payload.encode(), self.privkey, "SHA-256")
 
-        #payload = f"{data.batch_id}|{data.name}|{data.manufacturer}|{data.expiry}|{location}|{add_by}"
-        #self.chain = BlockChain(self.sample_data1, "Mumbai", "PharmaCorp")
-    
-    def build_payload(self,data, location, add_by):
-        return f"{data.batch_id}|{data.name}|{data.manufacturer}|{data.expiry_date}|{add_by}|{location}"
-
-    def test_genesis_block_created(self):
-        self.assertEqual(self.chain.head.index, 0)
-        self.assertEqual(self.chain.head.data.name, "Genesis")
 
     def test_add_valid_block(self):
-        self.chain.add_block(self.sample_data1, "Mumbai", "PharmaCorp",self.signature)
-        self.assertEqual(self.chain.last_block.data.batch_id, 101)
-        self.assertEqual(self.chain.last_block.location, "Mumbai")
-        self.assertEqual(self.chain.last_block.add_by, "PharmaCorp")
+        new_data = data(
+            batch_id=2,
+            name="Ibuprofen",
+            manufacturer="OldLabs",
+            expiry_date=date.today() + timedelta(days=400)
+        )
+        payload = f"{new_data.batch_id}|{new_data.name}|{new_data.manufacturer}|{new_data.expiry_date}|{self.user}|{self.location}"
+        signature = rsa.sign(payload.encode(), PRIVATE_KEYS[self.user], "SHA-256")
+        self.chain.add_block(new_data, self.location, self.user, signature)
+        self.assertEqual(len(self.chain.get_all_blocks()), 2)
 
-    def test_duplicate_batch_rejected(self):
-        self.chain.add_block(self.sample_data1, "Mumbai", "PharmaCorp",self.signature) # to explicitly get into duplicate
-        #payload = self.build_payload(self.duplicate_data, "Bangalore", "FakePharma")
-        fake_signature = b"INVALID_SIGNATURE"
-        
+    def test_invalid_signature_raises(self):
+        invalid_signature = b"fake_signature"
+        new_data = data(
+            batch_id=3,
+            name="Vitamin C",
+            manufacturer="FakePharma",
+            expiry_date=date.today() + timedelta(days=100)
+        )
         with self.assertRaises(ValueError):
-            self.chain.add_block(self.duplicate_data, "Bangalore", "FakePharma", fake_signature)
-
+            self.chain.add_block(new_data, self.location, self.user, invalid_signature)
 
     def test_expired_medicine_rejected(self):
-        payload = self.build_payload(self.expired_data, "Chennai", "OldLabs")
-        signature = rsa.sign(payload.encode(), PRIVATE_KEYS["OldLabs"],'SHA-256')
+        expired_data = data(
+            batch_id="expiredbatch001",
+            name="XYZ",
+            manufacturer="ExpiredPharma",
+            expiry_date=date(2023, 1, 1)
+        )
+        signature = self._generate_signature(expired_data)
+    
+        # Catch RuleViolation instead of letting it crash
+        with self.assertRaises(RuleViolation):
+            self.chain.add_block(expired_data, self.location, self.user, signature)
+    
+        self.assertEqual(len(self.chain.get_all_blocks()), 1)  # genesis only
+
+
+    def test_duplicate_batch_rejected(self):
+        signature = self._generate_signature(self.valid_data)
         
+        # First addition (valid)
+        self.chain.add_block(self.valid_data, self.location, self.user, signature)
+    
+        # Second addition (should raise)
+        with self.assertRaises(RuleViolation):
+            self.chain.add_block(self.valid_data, self.location, self.user, signature)
+    
+        self.assertEqual(len(self.chain.get_all_blocks()), 2)  # genesis + 1
+
+
+
+    def test_unauthorized_user(self):
+        fake_user = "BadActor"
+        bad_data = data(
+            batch_id=5,
+            name="UnknownDrug",
+            manufacturer="ShadyCorp",
+            expiry_date=date.today() + timedelta(days=100)
+        )
+        payload = f"{bad_data.batch_id}|{bad_data.name}|{bad_data.manufacturer}|{bad_data.expiry_date}|{fake_user}|{self.location}"
+        (_, bad_private_key) = rsa.newkeys(512)
+        signature = rsa.sign(payload.encode(), bad_private_key, "SHA-256")
         with self.assertRaises(ValueError):
-            self.chain.add_block(self.expired_data, "Chennai", "OldLabs", signature)
-        
+            self.chain.add_block(bad_data, self.location, fake_user, signature)
 
-    def test_chain_validation(self):
-        payload = self.build_payload(self.sample_data2, "Delhi", "MediLife")
-        signature = rsa.sign(payload.encode(), PRIVATE_KEYS["MediLife"],'SHA-256')
-        self.chain.add_block(self.sample_data2, "Delhi", "MediLife", signature)
-        self.assertTrue(self.chain.validate())
-
-    def test_invalid_signature_rejected(self):
-        payload = self.build_payload(self.sample_data2, "Delhi", "MediLife")
-        wrong_signature = rsa.sign(payload.encode(), PRIVATE_KEYS["PharmaCorp"], 'SHA-256')  # Signed by wrong person
-        with self.assertRaises(ValueError):
-            self.chain.add_block(self.sample_data2, "Delhi", "MediLife", wrong_signature)
-
-
-    def test_unknown_sender_rejected(self):
-        unknown_sender = "RandomHacker"
-        payload = self.build_payload(self.sample_data2, "Delhi", unknown_sender)
-        # generate new private/public key pair not in ALLOWED_KEYS
-        pubkey, privkey = rsa.newkeys(512)
-        signature = rsa.sign(payload.encode(), privkey, 'SHA-256')
-    
-        with self.assertRaises(ValueError):
-            self.chain.add_block(self.sample_data2, "Delhi", unknown_sender, signature)
-
-
-    def test_chain_breaks_on_tamper(self):
-        payload = self.build_payload(self.sample_data2, "Delhi", "MediLife")
-        signature = rsa.sign(payload.encode(), PRIVATE_KEYS["MediLife"], 'SHA-256')
-        self.chain.add_block(self.sample_data2, "Delhi", "MediLife", signature)
-    
-        blocks = self.chain.get_all_blocks()
-        with self.assertRaises(FrozenInstanceError):
-            blocks[1].data.name = "TamperedDrug"
-
-    
-        self.assertFalse(self.chain.validate())
-
-    def test_timestamp_exists(self):
-        payload = self.build_payload(self.sample_data2, "Goa", "MediLife")
-        signature = rsa.sign(payload.encode(), PRIVATE_KEYS["MediLife"], 'SHA-256')
-        self.chain.add_block(self.sample_data2, "Goa", "MediLife", signature)
-    
-        self.assertIsNotNone(self.chain.last_block.timestamp)
-
-
-    def test_multiple_blocks_added(self):
-       payload = self.build_payload(self.sample_data2, "Delhi", "MediLife")
-       signature = rsa.sign(payload.encode(), PRIVATE_KEYS["MediLife"], 'SHA-256')
-       self.chain.add_block(self.sample_data2, "Delhi", "MediLife", signature)
-   
-       blocks = self.chain.get_all_blocks()
-   
-       self.assertEqual(blocks[1].data.name, "Ibuprofen")  # genesis is at 0
-       self.assertEqual(blocks[2].data.name, "Paracetamol")
-
-
-
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

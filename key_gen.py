@@ -1,4 +1,4 @@
-import rsa
+import rsa # type: ignore
 
 stakeholders = ["PharmaCorp","OldLabs","MediLife","pharma1", "pharma2", "pharma3", "pharma4", "pharma5"]
 
