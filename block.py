@@ -13,7 +13,7 @@ class data:
 
 
 class Block:
-    def __init__(self, index , data ,previous_block, previous_hash , location , add_by , timestamp=None):
+    def __init__(self, index , data ,previous_block, previous_hash , location , add_by , signature,timestamp=None):
         self.index = index
         self.timestamp = timestamp or time.time()
         self.data = data
@@ -21,6 +21,7 @@ class Block:
         self.location = location
         self.add_by = add_by
         self.previous_hash = previous_hash
+        self.signature=signature
         self.hash = self.calculate_hash()
 
     def calculate_hash(self):
