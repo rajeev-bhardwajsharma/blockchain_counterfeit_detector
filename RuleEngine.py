@@ -1,49 +1,55 @@
 from datetime import date
-from key_gen import ALLOWED_KEYS  # type: ignore
-import rsa  # type: ignore
+from key_gen import ALLOWED_KEYS  # type: ignore #contain public key
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
 
 
-
-
-
-# ------------------------------
 # Custom Exception
-# ------------------------------
+
 class RuleViolation(Exception):
     pass
 
-# ------------------------------
-# Rule Engine
-# ------------------------------
 class RuleEngine:
     def __init__(self, blockchain_ref):
         self.blockchain = blockchain_ref
 
-    def enforce_all_rules(self, data_obj, location, add_by, signature):
-        """
-        Apply all smart contract validations.
-        """
-        self._check_authorization(add_by)
-        self._verify_signature(data_obj, location, add_by, signature)
-        self._check_required_fields(data_obj)
-        self._check_expiry(data_obj)
-        self._check_duplicate_batch(data_obj.batch_id)
+    def enforce_all_rules(self, data_obj, location, add_by, signature,payload,sender):
         
 
-    # ------------------------------
-    # Rule Definitions
-    # ------------------------------
+        #Apply all smart contract validations.
+
+        self._check_authorization(add_by)
+        self._verify_signature( signature,payload,sender)
+        self._check_required_fields(data_obj)
+        self._check_expiry(data_obj)
+        #self._check_duplicate_batch(data_obj.batch_id) for future expansion 
+        
+
+  
     def _check_authorization(self, add_by):
+        #checking if add_by which is infact buyer is even allow to buy or not
         if add_by not in ALLOWED_KEYS:
-            raise RuleViolation(f"{add_by} is not authorized to add blocks.")
+            raise RuleViolation(f"{add_by} is not authorized to add blocks(buy medicine).")
 
     
 
-    def _verify_signature(self, data_obj, location, add_by, signature):
-        payload = self._build_payload(data_obj, location, add_by)
+    def _verify_signature(self,signature,payload,sender):
+        # Signature verification step:
+       # This confirms that the payload was signed by the actual sender using their private key.
+       #Note add_by is buyer and sender is current owner seller 
+       # This must match the public key of the entity initiating the transfer.
+        public_key = ALLOWED_KEYS[sender] 
         try:
-            rsa.verify(payload.encode(), signature, ALLOWED_KEYS[add_by])
-        except rsa.VerificationError:
+            public_key.verify(
+                signature,
+                payload.encode('utf-8'),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+        except Exception:
             raise RuleViolation("Invalid digital signature.")
 
     def _check_required_fields(self, data_obj):
@@ -55,26 +61,5 @@ class RuleEngine:
             raise RuleViolation("Medicine is expired.")
         
 
-    def _check_duplicate_batch(self, batch_id):
-        existing_batch_ids = set(
-            block.data.batch_id for block in self.blockchain.get_all_blocks()[1:]
-        )
-        if batch_id in existing_batch_ids:
-            raise RuleViolation("Duplicate batch ID detected.")
 
-
-
-    def test_duplicate_batch_rejected(self):
-        with self.assertRaises(ValueError):
-            payload = f"{self.valid_data.batch_id}|{self.valid_data.name}|{self.valid_data.manufacturer}|{self.valid_data.expiry_date}|{self.user}|{self.location}"
-            signature = rsa.sign(payload.encode(), PRIVATE_KEYS[self.user], "SHA-256")
-            self.chain.add_block(self.valid_data, self.location, self.user, signature)
     
-
-
-
-    # ------------------------------
-    # Helpers
-    # ------------------------------
-    def _build_payload(self, data, location, add_by):
-        return f"{data.batch_id}|{data.name}|{data.manufacturer}|{data.expiry_date}|{add_by}|{location}"

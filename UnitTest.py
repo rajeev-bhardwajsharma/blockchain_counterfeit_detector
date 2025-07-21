@@ -2,7 +2,7 @@ import datetime
 import unittest
 from datetime import date, timedelta
 from block import data 
-from blockchain import BlockChain
+from blockchain import BlockChain,GENESIS_DATA
 from key_gen import PRIVATE_KEYS,ALLOWED_KEYS
 import rsa
 from RuleEngine import RuleViolation
