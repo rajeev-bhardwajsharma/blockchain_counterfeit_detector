@@ -25,11 +25,11 @@ def generate_keys_for_stakeholders(names):
         )
         public_key = private_key.public_key()
 
-        # Save keys in PEM format (you can directly store the objects too, but PEM makes it serializable)
+        # Save keys in PEM format  PEM to makes it serializable
         PRIVATE_KEYS[name] = private_key
         ALLOWED_KEYS[name] = public_key
 
-# Optional: Function to serialize public key if needed
+# Optional: Function to serialize public key if needed optional for now
 def get_serialized_public_key(name):
     if name not in ALLOWED_KEYS:
         raise ValueError("No such stakeholder")
@@ -38,7 +38,7 @@ def get_serialized_public_key(name):
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
 
-# Optional: Function to serialize private key if needed
+# Optional: Function to serialize private key if needed optional for now
 def get_serialized_private_key(name):
     if name not in PRIVATE_KEYS:
         raise ValueError("No such stakeholder")
